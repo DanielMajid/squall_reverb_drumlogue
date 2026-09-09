@@ -1,63 +1,45 @@
-# Squall Reverb
+# Squall Reverb for drumlogue
 
-`Squall` is a port of Mutable Instruments Clouds reverb for the Korg NTS-1 mkII.
+Squall adapts the Mutable Instruments Clouds reverb core to the drumlogue `revfx` runtime.
 
-Ported by Daniel Majid Mirzakhani.
+## Adaptation
 
-Original Clouds DSP copyright Émilie Gillet.
-
-## Highlights
-
-- Uses DSP from the original Clouds synth module for an accurate emulation of the onboard reverb.
-- Playable `DPTH` range from short ambience to long dreamy washes.
-- Knob B `DPTH` also controls wet amount to closely emulate the 'one knob' functionality of the original module.
-- `FREEZE` holds the reverb tail and limits fresh input.
-- `SCAN` from `50%` to `100%` colors the frozen buffer. From `50%` to `0%` increases buffer leak to allow in new audio.
+- Processes interleaved stereo audio in place after copying the runtime input to output.
+- Stores the Clouds delay memory in a static drumlogue unit buffer.
+- Maps five drumlogue parameters to the Clouds reverb bridge.
+- Smooths tone, depth, freeze, and scan changes before updating the reverb core.
 
 ## Controls
 
-- Knob A `TONE`: Gentle low-pass control on reverb tail.
-- Knob B `DPTH`: Reverb amount/decay character.
-- `MIX` Hold `REVERB` button + Knob B: Wet/dry mix is currently disabled.
-- `FREEZE` Hold `REVERB` button + Knob B: Freezes the reverb buffer.
-    - Knob B `< 50%`: FREEZE off (normal operation).
-    - Knob B `>= 50%`: FREEZE on.
-    - Existing tail content is held.
-- `SCAN` Freeze behavior shaper.
-    - `50-100%`: Full clamp closed (no input bleed, no leak-out) with increasing frozen color sweep.
-    - `0-50%`: Allows fresh-input bleed (up to 5%) while leak-out is fixed at only 0.5%.
-    - `0%`: Maximum input bleed and darker/less diffuse freeze color.
+- `TONE`: damping and brightness of the tail.
+- `DEPTH`: reverb amount and decay.
+- `MIX`: intentionally inert to preserve the original Clouds-style interaction.
+- `FREEZE`: on/off control that holds the current tail.
+- `SCAN`: controls input bleed, tail retention, damping, and diffusion while frozen.
 
+## Dependencies
 
-`DPTH` behavior:
+The project requires the logue SDK and Mutable Instruments Eurorack sources. It
+uses `./logue-sdk` and `./eurorack` by default. Set `LOGUE_SDK_PATH` or
+`EURORACK_PATH` to select other initialized checkouts.
 
-- `0-50%`: Room/hall style reverb.
-- `50-75%`: Longer cathedral-like tail with subtle modulation character.
-- `75-100%`: Very long dreamy tail with more obvious modulation in the decay.
+## Build
 
-## To build this project
+Clone the project together with its pinned dependencies:
 
-- Clone this repo 
-	In desired directory:
+```sh
+git clone --recurse-submodules https://github.com/DanielMajid/squall_reverb.git
+cd squall_reverb
+```
 
-	Download this repo
+Set up and activate the drumlogue toolchain as described by the logue SDK, then
+run:
 
-	git clone --recurse-submodules https://github.com/DanielMajid/squall_reverb.git
+```sh
+make clean
+make install
+```
 
-- Download the ARM GCC toolchain
-
-	cd logue-sdk/tools/gcc/
-	./get_gcc_osx.sh
-	Run Make command to build binary
-
-- Compile project
-    - Run `make install`.
-    - Open Korg Kontrol Editor.
-
-- Load Project
-    - Drag `.nts1mkiiunit` file into the appropriate module category.
-    - Click sync.
-
-## License
-
-Released under the GPL3.0 license. See `LICENSE`.
+The project Makefile contains the complete build method from the official
+drumlogue `dummy-revfx` project. A successful install writes
+`Squall.drmlgunit` to this directory.

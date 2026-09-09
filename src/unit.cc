@@ -1,203 +1,199 @@
+/*
+ *  File: unit.cc
+ *
+ *  @brief drumlogue reverb unit interface — Squall (Clouds reverb port).
+ *
+ *  Squall is a port of Mutable Instruments Clouds reverb for drumlogue.
+ *  Original Clouds DSP copyright Emilie Gillet, released under MIT License.
+ *  Port by Daniel Majid Mirzakhani.
+ */
+
 #include <algorithm>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
 
-#include "unit_revfx.h"
-#include "utils/int_math.h"
-
-// Parameter IDs forwarded to the DSP bridge.
-enum {
-  k_user_revfx_param_tone = 0,
-  k_user_revfx_param_depth,
-  k_user_revfx_param_mix_passthrough,
-  k_user_revfx_param_freeze,
-  k_user_revfx_param_freeze_scan,
-};
-
-// Extra slots used by this unit beyond the fixed SDK parameters.
-constexpr uint8_t k_unit_revfx_param_freeze_slot = 3;
-constexpr uint8_t k_unit_revfx_param_freeze_scan_slot = 4;
+#include "unit.h"
 
 extern "C" {
 
-// DSP bridge hooks implemented in clouds_reverb.cc.
 void _hook_init(uint32_t platform, uint32_t api, uint32_t samplerate);
-void _hook_process(float* in_out, uint32_t frames);
+void _hook_process(float * in_out, uint32_t frames);
 void _hook_suspend(void);
 void _hook_resume(void);
 void _hook_param(uint8_t index, int32_t value);
-
-// Delay buffer hook pair: size request and pointer handoff.
-uint32_t _hook_buffer_size();
-void _hook_set_buffer(float* buf);
+void _hook_set_static_buffer(void);
 
 }  // extern "C"
 
-namespace {
+enum {
+  k_param_tone = 0,
+  k_param_depth,
+  k_param_mix,
+  k_param_freeze,
+  k_param_freeze_scan,
+  k_num_params,
+};
 
-int32_t s_cached_values[UNIT_REVFX_MAX_PARAM_COUNT] = {};
-uint32_t s_platform = 0;
-uint32_t s_api = 0;
-uint32_t s_samplerate = 0;
-bool s_runtime_context_ready = false;
-bool s_startup_freeze_guard = true;
+class Squall {
+ public:
+  Squall(void) {}
+  ~Squall(void) {}
 
-// Convert SDK dry/wet range [-1000, 1000] into [0, 1023].
-inline int32_t drywet_to_shift_depth(const int32_t drywet) {
-  const int32_t clamped = clipminmaxi32(-1000, drywet, 1000);
-  return (clamped + 1000) * 1023 / 2000;
-}
+  inline int8_t Init(const unit_runtime_desc_t * desc) {
+    if (desc->samplerate != 48000U)
+      return k_unit_err_samplerate;
 
-// Convert parameter values from [0, 1023] into q31.
-inline int32_t legacy_param_to_q31(int32_t value) {
-  const int32_t clamped = clipminmaxi32(0, value, 1023);
-  return static_cast<int32_t>((static_cast<int64_t>(clamped) * 0x7FFFFFFFLL) / 1023);
-}
+    if (desc->input_channels != 2U || desc->output_channels != 2U)
+      return k_unit_err_geometry;
 
-}  // namespace
+    _hook_set_static_buffer();
+    _hook_init(desc->target, desc->api, desc->samplerate);
 
-__unit_callback int8_t unit_init(const unit_runtime_desc_t *desc) {
-  if (!desc) {
+    for (uint8_t i = 0U; i < k_num_params; ++i) {
+      cached_values_[i] = static_cast<int32_t>(unit_header.params[i].init);
+      _hook_param(i, cached_values_[i]);
+    }
+
+    return k_unit_err_none;
+  }
+
+  inline void Teardown() {}
+
+  inline void Reset() {
+    _hook_init(0U, 0U, 48000U);
+    for (uint8_t i = 0U; i < k_num_params; ++i)
+      _hook_param(i, cached_values_[i]);
+  }
+
+  inline void Resume() {
+    _hook_resume();
+  }
+
+  inline void Suspend() {
+    _hook_suspend();
+  }
+
+  fast_inline void Process(const float * in, float * out, size_t frames) {
+    if (in != out)
+      std::copy(in, in + (frames << 1), out);
+    _hook_process(out, static_cast<uint32_t>(frames));
+  }
+
+  inline void setParameter(uint8_t index, int32_t value) {
+    if (index >= k_num_params)
+      return;
+
+    const int32_t minimum = unit_header.params[index].min;
+    const int32_t maximum = unit_header.params[index].max;
+    if (value < minimum)
+      value = minimum;
+    else if (value > maximum)
+      value = maximum;
+
+    cached_values_[index] = value;
+    _hook_param(index, value);
+  }
+
+  inline int32_t getParameterValue(uint8_t index) const {
+    return index < k_num_params ? cached_values_[index] : 0;
+  }
+
+  inline const char * getParameterStrValue(uint8_t index, int32_t value) const {
+    (void)index;
+    (void)value;
+    return nullptr;
+  }
+
+  inline const uint8_t * getParameterBmpValue(uint8_t index, int32_t value) const {
+    (void)index;
+    (void)value;
+    return nullptr;
+  }
+
+  inline void LoadPreset(uint8_t idx) {
+    (void)idx;
+  }
+
+  inline uint8_t getPresetIndex() const {
+    return 0U;
+  }
+
+  static inline const char * getPresetName(uint8_t idx) {
+    (void)idx;
+    return nullptr;
+  }
+
+ private:
+  int32_t cached_values_[UNIT_MAX_PARAM_COUNT] = {};
+};
+
+static Squall s_reverb_instance;
+static unit_runtime_desc_t s_runtime_desc;
+
+// ---- Callback entry points from drumlogue runtime ----------------------------------------------
+
+__unit_callback int8_t unit_init(const unit_runtime_desc_t * desc) {
+  if (!desc)
     return k_unit_err_undef;
-  }
 
-  if (desc->target != unit_header.target) {
+  if (desc->target != unit_header.target)
     return k_unit_err_target;
-  }
-
-  if (!UNIT_API_IS_COMPAT(desc->api)) {
+  if (!UNIT_API_IS_COMPAT(desc->api))
     return k_unit_err_api_version;
-  }
 
-  if (desc->input_channels != 2 || desc->output_channels != 2) {
-    return k_unit_err_geometry;
-  }
+  s_runtime_desc = *desc;
 
-  // Ask the DSP bridge how much delay memory it needs.
-  const uint32_t buf_words = _hook_buffer_size();
-  if (buf_words > 0) {
-    if (!desc->hooks.sdram_alloc) {
-      return k_unit_err_memory;
-    }
-    float* buf = reinterpret_cast<float*>(
-      desc->hooks.sdram_alloc(buf_words * sizeof(float)));
-    if (!buf) {
-      return k_unit_err_memory;
-    }
-    // Clear delay memory to avoid startup noise.
-    std::fill_n(buf, buf_words, 0.f);
-    _hook_set_buffer(buf);
-  }
-
-  // Start DSP state.
-  s_platform = desc->target;
-  s_api = desc->api;
-  s_samplerate = desc->samplerate;
-  s_runtime_context_ready = true;
-  s_startup_freeze_guard = true;
-  _hook_init(desc->target, desc->api, desc->samplerate);
-
-  // Push every init value through unit_set_param_value() so startup and
-  // live knob changes share exactly the same clamp + conversion path.
-  // This avoids surprises where defaults behave differently than edits.
-  for (uint8_t index = 0; index < UNIT_REVFX_MAX_PARAM_COUNT; ++index) {
-    s_cached_values[index] = static_cast<int32_t>(unit_header.params[index].init);
-    unit_set_param_value(index, s_cached_values[index]);
-  }
-
-  return k_unit_err_none;
+  return s_reverb_instance.Init(desc);
 }
 
-__unit_callback void unit_teardown() {}
+__unit_callback void unit_teardown() {
+  s_reverb_instance.Teardown();
+}
 
 __unit_callback void unit_reset() {
-  if (!s_runtime_context_ready) {
-    return;
-  }
-
-  _hook_init(s_platform, s_api, s_samplerate);
-
-  for (uint8_t index = 0; index < UNIT_REVFX_MAX_PARAM_COUNT; ++index) {
-    unit_set_param_value(index, s_cached_values[index]);
-  }
+  s_reverb_instance.Reset();
 }
 
 __unit_callback void unit_resume() {
-  _hook_resume();
+  s_reverb_instance.Resume();
 }
 
 __unit_callback void unit_suspend() {
-  _hook_suspend();
+  s_reverb_instance.Suspend();
 }
 
-__unit_callback void unit_render(const float* in, float* out, uint32_t frames) {
-  s_startup_freeze_guard = false;
-
-  // Copy input to output first, then process in place.
-  std::copy(in, in + (frames << 1), out);
-  _hook_process(out, frames);
+__unit_callback void unit_render(const float * in, float * out, uint32_t frames) {
+  s_reverb_instance.Process(in, out, frames);
 }
 
 __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
-  if (id >= UNIT_REVFX_MAX_PARAM_COUNT) {
-    return;
-  }
-
-  value = clipminmaxi32(unit_header.params[id].min, value, unit_header.params[id].max);
-  if (id == k_unit_revfx_param_freeze_slot && s_startup_freeze_guard) {
-    value = 0;
-  }
-  s_cached_values[id] = value;
-
-  switch (id) {
-  case k_unit_revfx_fixed_param_time:
-    // Fixed TIME slot is used as TONE in this unit.
-    _hook_param(k_user_revfx_param_tone, legacy_param_to_q31(value));
-    break;
-
-  case k_unit_revfx_fixed_param_depth:
-    _hook_param(k_user_revfx_param_depth, legacy_param_to_q31(value));
-    break;
-
-  case k_unit_revfx_fixed_param_mix:
-    // Keep MIX in its fixed SDK slot. The DSP bridge currently ignores it.
-    _hook_param(
-        k_user_revfx_param_mix_passthrough,
-        legacy_param_to_q31(drywet_to_shift_depth(value)));
-    break;
-
-  case k_unit_revfx_param_freeze_slot:
-    // FREEZE in slot 3.
-    _hook_param(k_user_revfx_param_freeze, legacy_param_to_q31(value));
-    break;
-
-  case k_unit_revfx_param_freeze_scan_slot:
-    // SCAN in slot 4.
-    _hook_param(k_user_revfx_param_freeze_scan, legacy_param_to_q31(value));
-    break;
-
-  default:
-    break;
-  }
+  s_reverb_instance.setParameter(id, value);
 }
 
 __unit_callback int32_t unit_get_param_value(uint8_t id) {
-  if (id >= UNIT_REVFX_MAX_PARAM_COUNT) {
-    return 0;
-  }
-
-  return s_cached_values[id];
+  return s_reverb_instance.getParameterValue(id);
 }
 
-__unit_callback const char *unit_get_param_str_value(uint8_t id, int32_t value) {
-  (void)id;
-  (void)value;
-  return nullptr;
+__unit_callback const char * unit_get_param_str_value(uint8_t id, int32_t value) {
+  return s_reverb_instance.getParameterStrValue(id, value);
+}
+
+__unit_callback const uint8_t * unit_get_param_bmp_value(uint8_t id, int32_t value) {
+  return s_reverb_instance.getParameterBmpValue(id, value);
 }
 
 __unit_callback void unit_set_tempo(uint32_t tempo) {
   (void)tempo;
 }
 
-__unit_callback void unit_tempo_4ppqn_tick(uint32_t counter) {
-  (void)counter;
+__unit_callback void unit_load_preset(uint8_t idx) {
+  s_reverb_instance.LoadPreset(idx);
+}
+
+__unit_callback uint8_t unit_get_preset_index() {
+  return s_reverb_instance.getPresetIndex();
+}
+
+__unit_callback const char * unit_get_preset_name(uint8_t idx) {
+  return Squall::getPresetName(idx);
 }

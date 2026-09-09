@@ -1,6 +1,6 @@
 [submodule "logue-sdk"]
 	path = logue-sdk
-	url = https://github.com/korginc/logue-sdk.git
+	url = https://github.com/DanielMajid/logue-sdk.git
 [submodule "eurorack"]
 	path = eurorack
-	url = https://github.com/DanielMajid/eurorack
+	url = https://github.com/DanielMajid/eurorack.git

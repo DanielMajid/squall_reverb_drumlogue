@@ -25,26 +25,27 @@
 // -----------------------------------------------------------------------------
 //
 // Reverb core that follows the original Clouds DSP structure.
-// Keep this file behavior-stable; adapt platform/runtime behavior in
-// src/clouds_reverb.cc instead.
+// Platform and runtime integration are implemented in src/clouds_reverb.cc.
 
 #ifndef SQUALL_REVERB_H_
 #define SQUALL_REVERB_H_
 
 #include "stmlib/stmlib.h"
+#include "frame.h"
 #include "fx_engine.h"
 
 namespace clouds {
 
 class Reverb241A2A9 {
  public:
-  Reverb241A2A9() { }
-  ~Reverb241A2A9() { }
+  Reverb241A2A9() {}
+  ~Reverb241A2A9() {}
 
-  void Init(float* buffer) {
+  void Init(float * buffer, float sample_rate) {
     engine_.Init(buffer);
-    engine_.SetLFOFrequency(LFO_1, 0.5f / 32000.0f);
-    engine_.SetLFOFrequency(LFO_2, 0.3f / 32000.0f);
+    const float inverse_sample_rate = 1.f / sample_rate;
+    engine_.SetLFOFrequency(LFO_1, 0.5f * inverse_sample_rate);
+    engine_.SetLFOFrequency(LFO_2, 0.3f * inverse_sample_rate);
     lp_ = 0.7f;
     diffusion_ = 0.625f;
     freeze_wet_gain_ = 1.0f;
@@ -53,8 +54,8 @@ class Reverb241A2A9 {
     lp_decay_2_ = 0.0f;
   }
 
-  void Process(FloatFrame* in_out, size_t size) {
-    // Fixed delay topology and taps retained to preserve established voicing.
+  void Process(FloatFrame * in_out, size_t size) {
+    // Fixed delay topology and taps define the reverb's voicing.
     typedef E::Reserve<113,
       E::Reserve<162,
       E::Reserve<241,
