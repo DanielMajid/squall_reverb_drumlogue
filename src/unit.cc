@@ -26,9 +26,9 @@ void _hook_set_static_buffer(void);
 }  // extern "C"
 
 enum {
+  // Keep this order identical to the non-empty rows in header.c.
   k_param_tone = 0,
   k_param_depth,
-  k_param_mix,
   k_param_freeze,
   k_param_freeze_scan,
   k_num_params,
@@ -74,6 +74,8 @@ class Squall {
   }
 
   fast_inline void Process(const float * in, float * out, size_t frames) {
+    // The core reads its input and writes its wet return through one buffer.
+    // Preserve the input when the SDK supplies separate input and output buffers.
     if (in != out)
       std::copy(in, in + (frames << 1), out);
     _hook_process(out, static_cast<uint32_t>(frames));

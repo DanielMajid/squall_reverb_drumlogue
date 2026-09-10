@@ -23,23 +23,22 @@ namespace {
 // The capacity covers every delay line and filter state used by the core.
 constexpr uint32_t k_reverb_buffer_words = 16384U;
 
-// Parameter indices consumed by _hook_param.
+// Keep these indices identical to the non-empty parameter rows in header.c.
 constexpr uint8_t k_param_tone = 0U;
 constexpr uint8_t k_param_depth = 1U;
-constexpr uint8_t k_param_mix_passthrough = 2U;
-constexpr uint8_t k_param_freeze = 3U;
-constexpr uint8_t k_param_freeze_scan = 4U;
+constexpr uint8_t k_param_freeze = 2U;
+constexpr uint8_t k_param_freeze_scan = 3U;
 
-// Reverb core scaling constants define Squall's input level and decay range.
-constexpr float k_amount_scale = 0.54f;
+// These constants translate the drumlogue controls to the reverb core's
+// normalized time, filtering, and input-gain ranges.
 constexpr float k_time_base = 0.35f;
 constexpr float k_time_scale = 0.63f;
 constexpr float k_lp_base = 0.6f;
 constexpr float k_lp_scale = 0.37f;
 constexpr float k_input_gain_base = 0.2f;
 
-// Per-sample coefficients match the Clouds core's 32-frame control response
-// while supporting the callback sizes used by the drumlogue SDK.
+// Smooth the controls per sample so the result is independent of the SDK
+// callback size and does not step when a parameter changes.
 constexpr float k_control_smoothing = 0.00694898f;
 constexpr float k_freeze_smoothing = 0.00127487f;
 constexpr float k_scan_smoothing = 0.00047219f;
@@ -109,10 +108,11 @@ void _hook_suspend(void) {}
 void _hook_process(float * xn, uint32_t frames) {
   smooth_controls(frames);
 
-  const float base_amount = s_reverb_amount_smoothed * k_amount_scale;
+  // DEPTH sets the normal tail length, and TONE sets the normal damping.
   const float base_time = k_time_base + k_time_scale * s_reverb_amount_smoothed;
   const float base_lp = k_lp_base + k_lp_scale * s_tone_smoothed;
 
+  // SCAN currently shapes the frozen state. It does not move a playback head.
   const float scan_lock = clamp01((s_scan_smoothed - 0.5f) * 2.f);
   const float scan_leak = clamp01((0.5f - s_scan_smoothed) * 2.f);
 
@@ -124,7 +124,8 @@ void _hook_process(float * xn, uint32_t frames) {
   const float scan_color = scan_lock * scan_lock * (0.75f + 0.25f * scan_lock);
   const float scan_amount = scan_color * s_freeze_blend;
 
-  const float amount = base_amount + (1.f - base_amount) * freeze_hold;
+  // FREEZE extends the feedback loop and reduces external excitation while
+  // retaining the currently circulating reverb tail.
   const float reverb_time = base_time + (1.f - base_time) * freeze_hold;
   const float freeze_wet_gain = 1.f - 0.45f * s_freeze_blend;
   const float input_gain = k_input_gain_base * input_scale;
@@ -137,13 +138,13 @@ void _hook_process(float * xn, uint32_t frames) {
   if (diffusion > 0.74f)
     diffusion = 0.74f;
 
-  s_processor_instance.set_amount(amount);
   s_processor_instance.set_diffusion(clamp01(diffusion));
   s_processor_instance.set_time(reverb_time);
   s_processor_instance.set_input_gain(input_gain);
   s_processor_instance.set_lp(lp);
   s_processor_instance.set_freeze_wet_gain(freeze_wet_gain);
 
+  // FloatFrame is a pair of interleaved stereo float samples.
   clouds::FloatFrame * out = reinterpret_cast<clouds::FloatFrame *>(xn);
   s_processor_instance.Process(out, frames);
 }
@@ -157,9 +158,6 @@ void _hook_param(uint8_t index, int32_t value) {
       break;
     case k_param_depth:
       s_reverb_amount = clamp01(value_f);
-      break;
-    case k_param_mix_passthrough:
-      // Intentionally inert to preserve Squall's Clouds-style playability.
       break;
     case k_param_freeze:
       s_freeze = value != 0;

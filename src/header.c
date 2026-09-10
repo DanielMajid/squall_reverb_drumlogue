@@ -20,22 +20,21 @@ const __unit_header unit_header_t unit_header = {
     .version = 0x00000100U,
     .name = "Squall",
     .num_presets = 0,
-    .num_params = 5,
+    .num_params = 4,
 
     .params = {
-        // Page 1
+        // Page 1: the complete set of user controls. TONE and DPTH use the
+        // 10-bit range so the bridge can apply smooth internal scaling.
         // Slot 0 — TONE: gentle low-pass control on reverb tail.
         {0, 1023, 0, 384, k_unit_param_type_none, 1, 0, 0, {"TONE"}},
-        // Slot 1 — DPTH: reverb amount/decay character.
+        // Slot 1 — DPTH: reverb tail length and decay character.
         {0, 1023, 0, 512, k_unit_param_type_none, 1, 0, 0, {"DPTH"}},
-        // Slot 2 — MIX: intentionally inert Clouds-style control.
-        {-1000, 1000, 0, 0, k_unit_param_type_drywet, 1, 1, 0, {"MIX"}},
-        // Slot 3 — FREEZE: freezes the reverb buffer.
+        // Slot 2 — FREEZE: holds the reverb tail.
         {0, 1, 0, 0, k_unit_param_type_onoff, 0, 0, 0, {"FREEZE"}},
+        // Slot 3 — SCAN: shapes the held tail while FREEZE is active.
+        {0, 1023, 0, 1023, k_unit_param_type_none, 1, 0, 0, {"SCAN"}},
 
         // Page 2
-        // Slot 4 — SCAN: freeze behavior shaper.
-        {0, 1023, 0, 1023, k_unit_param_type_none, 1, 0, 0, {"SCAN"}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},

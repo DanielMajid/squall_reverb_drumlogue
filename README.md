@@ -4,18 +4,20 @@ Squall adapts the Mutable Instruments Clouds reverb core to the drumlogue `revfx
 
 ## Adaptation
 
-- Processes interleaved stereo audio in place after copying the runtime input to output.
+- Returns wet-only stereo reverb audio to the drumlogue send bus.
 - Stores the Clouds delay memory in a static drumlogue unit buffer.
-- Maps five drumlogue parameters to the Clouds reverb bridge.
+- Maps four drumlogue parameters to the Clouds reverb bridge.
 - Smooths tone, depth, freeze, and scan changes before updating the reverb core.
+
+Squall returns only processed reverb audio. Use the drumlogue's reverb send and
+reverb level controls to set how much Squall is heard.
 
 ## Controls
 
 - `TONE`: damping and brightness of the tail.
-- `DEPTH`: reverb amount and decay.
-- `MIX`: intentionally inert to preserve the original Clouds-style interaction.
-- `FREEZE`: on/off control that holds the current tail.
-- `SCAN`: controls input bleed, tail retention, damping, and diffusion while frozen.
+- `DEPTH`: reverb tail length and decay.
+- `FREEZE`: holds the circulating reverb tail.
+- `SCAN`: shapes input bleed, tail retention, damping, and diffusion while frozen.
 
 ## Dependencies
 

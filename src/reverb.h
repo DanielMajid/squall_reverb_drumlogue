@@ -55,7 +55,8 @@ class Reverb241A2A9 {
   }
 
   void Process(FloatFrame * in_out, size_t size) {
-    // Fixed delay topology and taps define the reverb's voicing.
+    // Fixed delay topology and taps define the reverb's voicing. The incoming
+    // frames feed the delay network; the same frames receive its wet return.
     typedef E::Reserve<113,
       E::Reserve<162,
       E::Reserve<241,
@@ -81,7 +82,6 @@ class Reverb241A2A9 {
     const float kap = diffusion_;
     const float klp = lp_;
     const float krt = reverb_time_;
-    const float amount = amount_;
     const float gain = input_gain_;
 
     float lp_1 = lp_decay_1_;
@@ -118,7 +118,9 @@ class Reverb241A2A9 {
       c.Write(wet, 0.0f);
       wet *= freeze_wet_gain_;
 
-      in_out->l += (wet - in_out->l) * amount;
+      // The drumlogue supplies the dry signal separately on the send bus.
+      // Write only the processed return for the host to mix at its return level.
+      in_out->l = wet;
 
       c.Load(apout);
       c.Read(del1 TAIL, krt);
@@ -131,17 +133,13 @@ class Reverb241A2A9 {
       c.Write(wet, 0.0f);
       wet *= freeze_wet_gain_;
 
-      in_out->r += (wet - in_out->r) * amount;
+      in_out->r = wet;
 
       ++in_out;
     }
 
     lp_decay_1_ = lp_1;
     lp_decay_2_ = lp_2;
-  }
-
-  inline void set_amount(float amount) {
-    amount_ = amount;
   }
 
   inline void set_input_gain(float input_gain) {
@@ -168,7 +166,7 @@ class Reverb241A2A9 {
   typedef FxEngine<16384, FORMAT_32_BIT> E;
   E engine_;
 
-  float amount_;
+  // The bridge sets these once per render block before Process().
   float input_gain_;
   float reverb_time_;
   float diffusion_;
