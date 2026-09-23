@@ -1,47 +1,42 @@
-# Squall Reverb for drumlogue
+# Squall Drumlogue Reverb Unit
 
-Squall adapts the Mutable Instruments Clouds reverb core to the drumlogue `revfx` runtime.
+`Squall` is a port of Mutable Instruments Clouds reverb for the Korg Drumlogue.
 
-## Adaptation
+Ported by Daniel Majid Mirzakhani.
 
-- Returns wet-only stereo reverb audio to the drumlogue send bus.
-- Stores the Clouds delay memory in a static drumlogue unit buffer.
-- Maps four drumlogue parameters to the Clouds reverb bridge.
-- Smooths tone, depth, freeze, and scan changes before updating the reverb core.
+Original Clouds DSP copyright Émilie Gillet.
 
-Squall returns only processed reverb audio. Use the drumlogue's reverb send and
-reverb level controls to set how much Squall is heard.
 
-## Controls
+# Controls
 
 - `TONE`: damping and brightness of the tail.
 - `DEPTH`: reverb tail length and decay.
 - `FREEZE`: holds the circulating reverb tail.
 - `SCAN`: shapes input bleed, tail retention, damping, and diffusion while frozen.
 
-## Dependencies
+# Dependencies
 
 The project requires the logue SDK and Mutable Instruments Eurorack sources. It
-uses `./logue-sdk` and `./eurorack` by default. Set `LOGUE_SDK_PATH` or
-`EURORACK_PATH` to select other initialized checkouts.
+uses `./logue-sdk` and `./eurorack` by default.
 
-## Build
+# Build
 
-Clone the project together with its pinned dependencies:
-
-```sh
-git clone --recurse-submodules https://github.com/DanielMajid/squall_reverb.git
-cd squall_reverb
-```
-
-Set up and activate the drumlogue toolchain as described by the logue SDK, then
-run:
+From the project folder, initialize the dependencies:
 
 ```sh
-make clean
-make install
+git submodule update --init --recursive
 ```
 
-The project Makefile contains the complete build method from the official
-drumlogue `dummy-revfx` project. A successful install writes
-`Squall.drmlgunit` to this directory.
+Make sure Docker is running, then download the build image if needed:
+
+```sh
+docker pull xiashj/logue-sdk:latest
+```
+
+Compile and package the unit:
+
+```sh
+./logue-sdk/docker/run_cmd.sh --platform=. build -f --drumlogue .
+```
+
+See Korg’s [logue SDK Docker build instructions](https://github.com/korginc/logue-sdk/blob/main/docker/README.md) for the complete build-environment documentation.
